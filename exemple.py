@@ -3,6 +3,7 @@ import numpy as np
 from keras.preprocessing.image import ImageDataGenerator
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
+from keras.utils import to_categorical
 
 data_path = "Images"
 target_size = (224, 224)
@@ -55,6 +56,10 @@ test_images = np.array(test_data)
 train_labels = label_encoder.transform(labels[:len(train_images)])
 val_labels = label_encoder.transform(labels[len(train_images):len(train_images) + len(val_images)])
 test_labels = label_encoder.transform(labels[len(train_images) + len(val_images):])
+
+train_labels = to_categorical(train_labels, num_classes=num_classes)
+val_labels = to_categorical(val_labels, num_classes=num_classes)
+test_labels = to_categorical(test_labels, num_classes=num_classes)
 
 print("Taille de l'ensemble d'entraînement :", len(train_images))
 print("Taille de l'ensemble de validation :", len(val_images))
