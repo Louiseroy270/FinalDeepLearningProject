@@ -12,16 +12,16 @@ import seaborn as sns
 
 data_dir = 'dogImages'
 
-train_transforms = transforms.Compose([
-    transforms.Resize(258),
-    transforms.RandomRotation(20),
-    transforms.RandomResizedCrop(224),
-    transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1),
-    transforms.RandomHorizontalFlip(),
-    transforms.RandomVerticalFlip(),
-    transforms.RandomAffine(degrees=0, translate=(0.1, 0.1)),
-    transforms.ToTensor(),
-    transforms.Normalize([0.485, 0.456, 0.406],[0.229, 0.224, 0.225])])
+train_transforms = transforms.Compose([transforms.Resize(258),
+                                        transforms.RandomRotation(20),
+                                        transforms.RandomResizedCrop(224),
+                                        transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1),
+                                        transforms.RandomHorizontalFlip(),
+                                        transforms.RandomVerticalFlip(),
+                                        transforms.RandomAffine(degrees=0, translate=(0.1, 0.1)),
+                                        transforms.ToTensor(),
+                                        transforms.Normalize([0.485, 0.456, 0.406],
+                                                             [0.229, 0.224, 0.225])])
 
 validTest_transforms = transforms.Compose([transforms.Resize(size=258),
                                            transforms.CenterCrop(224),
@@ -53,20 +53,21 @@ use_cuda = torch.cuda.is_available()
 # download VGG16 pretrained model
 model_transfer = models.vgg16(pretrained=True)
 
-for param in model_transfer.features.parameters():
+for param in model_transfer.parameters():
     param.requires_grad = False
 
-# Définir les couches de classification à entraîner
-for param in model_transfer.classifier.parameters():
-    param.requires_grad = True
+# # Définir les couches de classification à entraîner
+# for param in model_transfer.classifier.parameters():
+#     param.requires_grad = True
 
-# Choix de l'optimiseur avec des taux d'apprentissage différents pour les couches
-optimizer_fine_tune = optim.Adam([
-    {'params': model_transfer.features.parameters(), 'lr': 0.0001},  # Couches convolutionnelles
-    {'params': model_transfer.classifier.parameters(), 'lr': 0.001}  # Couches de classification
-])
+# # Choix de l'optimiseur avec des taux d'apprentissage différents pour les couches
+# optimizer_fine_tune = optim.Adam([
+#     {'params': model_transfer.features.parameters(), 'lr': 0.0001},  # Couches convolutionnelles
+#     {'params': model_transfer.classifier.parameters(), 'lr': 0.001}  # Couches de classification
+# ])
 
 number_of_dog_classes = len(train_dataset.classes)
+print(number_of_dog_classes)
     
 classifier = nn.Sequential(nn.Linear(25088, 4096),
                            nn.ReLU(),
@@ -95,10 +96,16 @@ def train(n_epochs, loaders, model, optimizer, criterion, use_cuda, save_path):
     
     train_losses = []
     valid_losses = []
+    train_accuracies = []
+    valid_accuracies = []
 
     for epoch in range(1, n_epochs+1):
         train_loss = 0.0
         valid_loss = 0.0
+        correct_train = 0
+        total_train = 0
+        correct_valid = 0
+        total_valid = 0
         
         # train the model
         model.train()
@@ -112,10 +119,17 @@ def train(n_epochs, loaders, model, optimizer, criterion, use_cuda, save_path):
             loss.backward()
             optimizer.step()
             train_loss += ((1 / (batch_idx + 1)) * (loss.data - train_loss))
+            _, predicted = torch.max(output.data, 1)
+            total_train += target.size(0)
+            correct_train += (predicted == target).sum().item()
+
             
             if (batch_idx + 1) % 5 == 0:
                 print(f'Epoch:{epoch}/{n_epochs} \tBatch:{batch_idx + 1}')
                 print(f'Train Loss: {train_loss}\n')
+        
+        train_accuracy = 100 * correct_train / total_train
+        train_accuracies.append(train_accuracy)
 
         # validate the model
         model.eval()
@@ -126,15 +140,22 @@ def train(n_epochs, loaders, model, optimizer, criterion, use_cuda, save_path):
                 output = model(data)
             loss = criterion(output, target)
             valid_loss += ((1 / (batch_idx + 1)) * (loss.data - valid_loss))
+            _, predicted = torch.max(output.data, 1)
+            total_valid += target.size(0)
+            correct_valid += (predicted == target).sum().item()
            
         train_losses.append(train_loss)
         valid_losses.append(valid_loss)
+        valid_accuracy = 100 * correct_valid / total_valid
+        valid_accuracies.append(valid_accuracy)
         
         # print training/validation statistics 
         print('Epoch: {} \tTraining Loss: {:.6f} \tValidation Loss: {:.6f}'.format(
             epoch, 
             train_loss,
-            valid_loss
+            valid_loss,
+            train_accuracy,
+            valid_accuracy
             ))
         
         # save the model if validation loss has decreased
@@ -149,6 +170,15 @@ def train(n_epochs, loaders, model, optimizer, criterion, use_cuda, save_path):
     plt.xlabel('Epochs')
     plt.ylabel('Loss')
     plt.title('Training and Validation Loss over Epochs')
+    plt.legend()
+    plt.show()
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(1, n_epochs+1), train_accuracies, label='Training Accuracy')
+    plt.plot(range(1, n_epochs+1), valid_accuracies, label='Validation Accuracy')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy')
+    plt.title('Training and Validation Accuracy over Epochs')
     plt.legend()
     plt.show()
     # return trained model
@@ -201,7 +231,7 @@ class_names = [item[4:].replace("_", " ") for item in train_dataset.classes]
 
 model_transfer.load_state_dict(torch.load('model_transfer.pt'))
 
-def plot_confusion_matrix(model, data_loader, class_names):
+def plot_confusion_table(model, data_loader):
     model.eval()
     all_preds = []
     all_targets = []
@@ -218,12 +248,24 @@ def plot_confusion_matrix(model, data_loader, class_names):
             all_targets.extend(targets.cpu().numpy())
 
     cm = confusion_matrix(all_targets, all_preds)
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=class_names, yticklabels=class_names)
-    plt.xlabel('Predicted')
-    plt.ylabel('True')
-    plt.title('Confusion Matrix')
-    plt.show()
 
-# Utilisation de la fonction pour afficher la matrice de confusion
-plot_confusion_matrix(model_transfer, testLoader, class_names)
+    true_positive = cm[1][1]
+    false_positive = cm[0][1]
+    true_negative = cm[0][0]
+    false_negative = cm[1][0]
+
+    confusion_table = [
+        ["Vrai Positif", "Faux Positif"],
+        ["Faux Négatif", "Vrai Négatif"]
+    ]
+
+    print("\nMatrice de Confusion (Tableau 2x2):")
+    for row in confusion_table:
+        print("\t".join(row))
+
+    print("\nVrai Positif:", true_positive)
+    print("Faux Positif:", false_positive)
+    print("Vrai Négatif:", true_negative)
+    print("Faux Négatif:", false_negative)
+
+plot_confusion_table(model_transfer, testLoader)
