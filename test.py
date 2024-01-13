@@ -86,7 +86,7 @@ criterion_transfer = nn.CrossEntropyLoss()
 
 optimizer_transfer = optim.Adam(model_transfer.classifier.parameters(), lr=0.001)
 
-ImageFile.LOAD_TRUNCATED_IMAGES = True
+ImageFile.LOAD_TRUNCATED_IMAGES =    True
 
 def train(n_epochs, loaders, model, optimizer, criterion, use_cuda, save_path):
 
@@ -190,7 +190,7 @@ loaders_transfer = {'train': trainLoader,
                     'valid': validLoader,
                     'test': testLoader}
 
-model_transfer = train(7, loaders_transfer, model_transfer, optimizer_transfer,
+model_transfer = train(20, loaders_transfer, model_transfer, optimizer_transfer,
                        criterion_transfer, use_cuda, 'model_transfer.pt')
 
 # load the model that got the best validation accuracy
